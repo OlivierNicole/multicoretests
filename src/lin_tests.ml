@@ -1,8 +1,8 @@
 open QCheck
 
-(** ********************************************************************** *)
-(**                       Tests of a simple reference                      *)
-(** ********************************************************************** *)
+(************************************************************************ *)
+(*                       Tests of a simple reference                      *)
+(************************************************************************ *)
 module Sut =
   struct
     let sut = ref 0
@@ -19,28 +19,86 @@ module RConf = struct
   type cmd =
     | Get
     | Set of int_arg
-    | Add of int_arg
-    | Incr
-    | Decr [@@deriving qcheck, show { with_path = false }]
   and int_arg = int [@gen Gen.nat]
 
-  type res = RGet of int | RSet | RAdd | RIncr | RDecr [@@deriving show { with_path = false }]
+  let show_cmd =
+    let open Format in function
+    | Get -> sprintf "Get"
+    | Set i -> sprintf "Set %i" i
+
+  let gen_cmd =
+    let open Gen in
+    frequency
+      [1, return Get;
+       1, map (fun v -> Set v) nat]
+
+  type res = RGet of int | RSet
+
+  let show_res =
+    let open Format in function
+    | RGet i -> sprintf "RGet %i" i
+    | RSet -> "RSet"
 
   let init () = Sut.sut
 
   let run c _r = match c with
     | Get   -> RGet (Sut.get ())
     | Set i -> (Sut.set i; RSet)
-    | Add i -> (Sut.add i; RAdd)
-    | Incr  -> (Sut.incr (); RIncr)
-    | Decr  -> (Sut.decr (); RDecr)
 
   let cleanup _ = Sut.set 0
 end
 
 module RT = Lin.Make(RConf)
 
+(*********************************************************************** *)
+(*                Tests of atomic int array operations                   *)
+(*********************************************************************** *)
+module ASut =
+  struct
+    let sut = Array.make 1 0
+    let get i = Array.get sut i
+    let set i v = Array.set sut i v
+    let cleanup () = Array.iteri (fun i _ -> Atomic.Array.set sut i 0) sut
+end
 
+module AAConf = struct
+  type t = int array
+
+  type cmd =
+    | Get of int_arg
+    | Set of int_arg * int_arg
+  and int_arg = int [@gen Gen.nat]
+
+  let show_cmd =
+    let open Format in function
+    | Get i -> sprintf "Get %i" i
+    | Set (i,v) -> sprintf "Set (%i, %i)" i v
+
+  let gen_cmd =
+    let open Gen in
+    frequency
+      [1, map (fun i -> Get i) (int_bound 0);
+       1, map2 (fun i v -> Set (i,v)) (int_bound 0) nat]
+
+  type res = RGet of int | RSet
+
+  let show_res =
+    let open Format in function
+    | RGet i -> sprintf "RGet %i" i
+    | RSet -> sprintf "RSet"
+
+  let init () = ASut.sut
+
+  let run c _r = match c with
+    | Get i -> RGet (ASut.get i)
+    | Set (i,v) -> (ASut.set i v; RSet)
+
+  let cleanup _ = ASut.cleanup ()
+end
+
+module AAT = Lin.Make(AAConf);;
+
+(*
 (** ********************************************************************** *)
 (**                  Tests of the buggy concurrent list CList              *)
 (** ********************************************************************** *)
@@ -399,10 +457,14 @@ end
 
 module KW1T = Lin.Make(KW1Conf)
 ;;
+*)
+
 Util.set_ci_printing ()
 ;;
 QCheck_runner.run_tests_main [
+  AAT.lin_test    ~count:1000 ~name:"Atomic.Array test";
   RT.lin_test     ~count:1000 ~name:"ref test";
+  (*
   CLT.lin_test    ~count:1000 ~name:"CList test";
   AT.lin_test     ~count:1000 ~name:"Atomic test";
   HT.lin_test     ~count:1000 ~name:"Hashtbl test";
@@ -414,4 +476,5 @@ QCheck_runner.run_tests_main [
   (* Kcas tests *)
   KT.lin_test     ~count:1000 ~name:"Kcas test";
   KW1T.lin_test   ~count:1000 ~name:"Kcas.W1 test";
+  *)
 ]
