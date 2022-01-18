@@ -22,7 +22,7 @@ module RConf = struct
   and int_arg = int [@gen Gen.nat]
 
   let show_cmd =
-    let open Format in function
+    let open Printf in function
     | Get -> sprintf "Get"
     | Set i -> sprintf "Set %i" i
 
@@ -35,7 +35,7 @@ module RConf = struct
   type res = RGet of int | RSet
 
   let show_res =
-    let open Format in function
+    let open Printf in function
     | RGet i -> sprintf "RGet %i" i
     | RSet -> "RSet"
 
@@ -70,20 +70,20 @@ module AAConf = struct
   and int_arg = int [@gen Gen.nat]
 
   let show_cmd =
-    let open Format in function
+    let open Printf in function
     | Get i -> sprintf "Get %i" i
     | Set (i,v) -> sprintf "Set (%i, %i)" i v
 
   let gen_cmd =
     let open Gen in
     frequency
-      [1, map (fun i -> Get i) (int_bound 0);
-       1, map2 (fun i v -> Set (i,v)) (int_bound 0) nat]
+      [1, map (fun i -> Get i) (int_bound 1);
+       1, map2 (fun i v -> Set (i,v)) (int_bound 1) nat]
 
   type res = RGet of int | RSet
 
   let show_res =
-    let open Format in function
+    let open Printf in function
     | RGet i -> sprintf "RGet %i" i
     | RSet -> sprintf "RSet"
 
