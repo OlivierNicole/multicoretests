@@ -18,32 +18,45 @@ module RConf = struct
 
   type cmd =
     | Get
-    | Set of int_arg
-  and int_arg = int [@gen Gen.nat]
+    | Set of int
+    | Add of int
+    | Incr
+    | Decr
 
-  let show_cmd =
-    let open Printf in function
-    | Get -> sprintf "Get"
-    | Set i -> sprintf "Set %i" i
+  let show_cmd = function
+    | Get -> "Get"
+    | Set i -> Printf.sprintf "Set %i" i
+    | Add i -> Printf.sprintf "Add %i" i
+    | Incr -> "Incr"
+    | Decr -> "Decr"
 
   let gen_cmd =
     let open Gen in
     frequency
       [1, return Get;
-       1, map (fun v -> Set v) nat]
+       1, map (fun v -> Set v) small_nat;
+       1, map (fun v -> Add v) small_nat;
+       1, return Incr;
+       1, return Decr;
+      ]
 
-  type res = RGet of int | RSet
+  type res = RGet of int | RSet | RAdd | RIncr | RDecr
 
-  let show_res =
-    let open Printf in function
-    | RGet i -> sprintf "RGet %i" i
+  let show_res = function
+    | RGet i -> Printf.sprintf "RGet %i" i
     | RSet -> "RSet"
+    | RAdd -> "RAdd"
+    | RIncr -> "RIncr"
+    | RDecr -> "RDecr"
 
   let init () = Sut.sut
 
   let run c _r = match c with
     | Get   -> RGet (Sut.get ())
     | Set i -> (Sut.set i; RSet)
+    | Add i -> (Sut.add i; RAdd)
+    | Incr  -> (Sut.incr (); RIncr)
+    | Decr  -> (Sut.decr (); RDecr)
 
   let cleanup _ = Sut.set 0
 end
@@ -51,13 +64,69 @@ end
 module RT = Lin.Make(RConf)
 
 (*********************************************************************** *)
-(*                Tests of atomic int array operations                   *)
+(*         (Failing) tests of non-atomic int array operations            *)
 (*********************************************************************** *)
-module ASut =
+module NAASut =
   struct
     let sut = Array.make 1 0
     let get i = Array.get sut i
     let set i v = Array.set sut i v
+    let exchange i v = let old = Array.get sut i in Array.set sut i v; old
+    let cleanup () = Array.iteri (fun i _ -> Atomic.Array.set sut i 0) sut
+end
+
+module NAAConf = struct
+  type t = int array
+
+  type cmd =
+    | Get of int_arg
+    | Set of int_arg * int_arg
+    | Xchg of int_arg * int_arg
+  and int_arg = int [@gen Gen.nat]
+
+  let show_cmd =
+    let open Printf in function
+    | Get i -> sprintf "Get %i" i
+    | Set (i,v) -> sprintf "Set (%i, %i)" i v
+    | Xchg (i,v) -> sprintf "Xchg (%i, %i)" i v
+
+  let gen_cmd =
+    let open Gen in
+    frequency
+      [1, map (fun i -> Get i) (int_bound 0);
+       1, map2 (fun i v -> Set (i,v)) (int_bound 0) nat;
+       1, map2 (fun i v -> Xchg (i,v)) (int_bound 0) nat;
+      ]
+
+  type res = RGet of int | RSet | RXchg of int
+
+  let show_res =
+    let open Printf in function
+    | RGet i -> sprintf "RGet %i" i
+    | RSet -> sprintf "RSet"
+    | RXchg i -> sprintf "RXchg %i" i
+
+  let init () = NAASut.sut
+
+  let run c _r = match c with
+    | Get i -> RGet (NAASut.get i)
+    | Set (i,v) -> (NAASut.set i v; RSet)
+    | Xchg (i,v) -> (let newi = NAASut.exchange i v in RXchg newi)
+
+  let cleanup _ = NAASut.cleanup ()
+end
+
+module NAAT = Lin.Make(NAAConf);;
+
+(*********************************************************************** *)
+(*         (Failing) tests of non-atomic int array operations            *)
+(*********************************************************************** *)
+module ASut =
+  struct
+    let sut = Array.make 1 0
+    let get i = Atomic.Array.get sut i
+    let set i v = Atomic.Array.set sut i v
+    let exchange i v = Atomic.Array.exchange sut i v
     let cleanup () = Array.iteri (fun i _ -> Atomic.Array.set sut i 0) sut
 end
 
@@ -67,31 +136,37 @@ module AAConf = struct
   type cmd =
     | Get of int_arg
     | Set of int_arg * int_arg
+    | Xchg of int_arg * int_arg
   and int_arg = int [@gen Gen.nat]
 
   let show_cmd =
     let open Printf in function
     | Get i -> sprintf "Get %i" i
     | Set (i,v) -> sprintf "Set (%i, %i)" i v
+    | Xchg (i,v) -> sprintf "Xchg (%i, %i)" i v
 
   let gen_cmd =
     let open Gen in
     frequency
-      [1, map (fun i -> Get i) (int_bound 1);
-       1, map2 (fun i v -> Set (i,v)) (int_bound 1) nat]
+      [1, map (fun i -> Get i) (int_bound 0);
+       1, map2 (fun i v -> Set (i,v)) (int_bound 0) nat;
+       1, map2 (fun i v -> Xchg (i,v)) (int_bound 0) nat;
+      ]
 
-  type res = RGet of int | RSet
+  type res = RGet of int | RSet | RXchg of int
 
   let show_res =
     let open Printf in function
     | RGet i -> sprintf "RGet %i" i
     | RSet -> sprintf "RSet"
+    | RXchg i -> sprintf "RXchg %i" i
 
   let init () = ASut.sut
 
   let run c _r = match c with
     | Get i -> RGet (ASut.get i)
     | Set (i,v) -> (ASut.set i v; RSet)
+    | Xchg (i,v) -> (let newi = ASut.exchange i v in RXchg newi)
 
   let cleanup _ = ASut.cleanup ()
 end
@@ -462,9 +537,10 @@ module KW1T = Lin.Make(KW1Conf)
 Util.set_ci_printing ()
 ;;
 QCheck_runner.run_tests_main [
-  AAT.lin_test    ~count:1000 ~name:"Atomic.Array test";
-  RT.lin_test     ~count:1000 ~name:"ref test";
+  NAAT.lin_test    ~count:10000 ~name:"non-atomic array test";
+  AAT.lin_test    ~count:10000 ~name:"Atomic.Array test";
   (*
+  RT.lin_test     ~count:1000 ~name:"ref test";
   CLT.lin_test    ~count:1000 ~name:"CList test";
   AT.lin_test     ~count:1000 ~name:"Atomic test";
   HT.lin_test     ~count:1000 ~name:"Hashtbl test";

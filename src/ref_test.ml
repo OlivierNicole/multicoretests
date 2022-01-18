@@ -19,7 +19,17 @@ struct
     | Set of int
     | Add of int
     | Incr
-    | Decr [@@deriving show { with_path = false }]
+    | Decr
+
+  let show_cmd =
+    let open Printf in function
+    | Get -> sprintf "Get"
+    | Set i -> sprintf "Set %i" i
+    | Add i -> sprintf "Add %i" i
+    | Incr -> "Incr"
+    | Decr -> "Decr"
+
+
   type state = int
   type sut = int ref
 
@@ -47,7 +57,15 @@ struct
 
   let precond _ _ = true
 
-  type res = RGet of int | RSet | RAdd | RIncr | RDecr [@@deriving show { with_path = false }]
+  type res = RGet of int | RSet | RAdd | RIncr | RDecr
+
+  let show_res =
+    let open Printf in function
+    | RGet i -> sprintf "RGet %i" i
+    | RSet -> "RSet"
+    | RAdd -> "RAdd"
+    | RIncr -> "RIncr"
+    | RDecr -> "RDecr"
 
   let run c _r =
     match c with
