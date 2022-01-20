@@ -181,10 +181,11 @@
 (executable
  (name lin_tests)
  (modules lin_tests)
- (flags (:standard -w -27))
+ (flags (:standard -w -27 -g))
 ;; (libraries util qcheck lin CList lockfree)
  (libraries util qcheck lin)
 ;; (preprocess (pps ppx_deriving_qcheck ppx_deriving.show))
+ (modes byte exe)
 )
 
 ;;(rule
