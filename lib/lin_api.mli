@@ -78,6 +78,37 @@ module type ApiSpec =
     val api : (int * t elem) list
   end
 
+module type MyCmdSpec = struct
+  type t
+  (** The type of the system under test *)
+
+  type cmd
+  (** The type of commands *)
+
+  val show_cmd : cmd -> string
+  (** [show_cmd c] returns a string representing the command [c]. *)
+
+  val gen_cmd_list : cmd list Gen.t
+  (** A command generator. *)
+
+  type res
+  (** The command result type *)
+
+  val show_res : res -> string
+  (** [show_res r] returns a string representing the result [r]. *)
+
+  val equal_res : res -> res -> bool
+
+  val init : unit -> t
+  (** Initialize the system under test. *)
+
+  val cleanup : t -> unit
+  (** Utility function to clean up [t] after each test instance,
+      e.g., for closing sockets, files, or resetting global parameters *)
+
+  val run : cmd -> t -> res
+  (** [run c t] should interpret the command [c] over the system under test [t] (typically side-effecting). *)
+end
 
 (** {1 Generation of linearizability testing module from an API} *)
 

@@ -103,6 +103,19 @@ module type ApiSpec = sig
   val api : (int * t elem) list
 end
 
+module type MyCmdSpec = struct
+  type t
+  type cmd
+  val show_cmd : cmd -> string
+  val gen_cmd_list : cmd list Gen.t
+  type res
+  val show_res : res -> string
+  val equal_res : res -> res -> bool
+  val init : unit -> t
+  val cleanup : t -> unit
+  val run : cmd -> t -> res
+end
+
 module MakeCmd (ApiSpec : ApiSpec) : Lin.CmdSpec = struct
 
   type t = ApiSpec.t
@@ -121,9 +134,18 @@ module MakeCmd (ApiSpec : ApiSpec) : Lin.CmdSpec = struct
     | FnState : ('b,'r) args -> (t -> 'b, 'r) args
   end
 
-  (* Operation name, typed argument list, return type descriptor, printer, function *)
   type cmd =
-    Cmd :
+  | Returning_state :
+      (* Operation name, typed argument list, argument list printer,
+         function *)
+      string *
+      ('ftyp, t) Args.args *
+      (('ftyp, 'r) Args.args -> string) *
+      'ftyp
+      -> cmd
+  | Returning_other :
+      (* Operation name, typed argument list, return type descriptor, argument
+         list printer, function *)
       string *
       ('ftyp, 'r) Args.args *
       ('r, deconstructible, t, _) ty *
