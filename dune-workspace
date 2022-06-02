@@ -1,0 +1,9 @@
+(lang dune 3.0)
+(env
+ (tsan
+  (ocamlopt_flags (:standard -tsan))
+  (flags (:standard -runtime-variant d))
+  (link_flags (-cclib -fsanitize=thread))
+  (c_flags -fsanitize=thread)
+ )
+)
