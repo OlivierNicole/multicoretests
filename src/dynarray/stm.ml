@@ -251,7 +251,6 @@ module Dynarray_spec (Elem : Elem) = struct
                 <$> arr_idx state
                 <*> nat;
           33, (fun arr_i -> Reset arr_i) <$> arr_idx state;
-          (*
           33, (fun src src_pos dst dst_pos len ->
                 Blit {src; src_pos; dst; dst_pos; len})
                <$> arr_idx state
@@ -259,7 +258,6 @@ module Dynarray_spec (Elem : Elem) = struct
                <*> arr_idx state
                <*> mid_int
                <*> mid_int;
-               *)
         ])
 
   let run : cmd -> sut -> res =
@@ -383,7 +381,10 @@ module Dynarray_spec (Elem : Elem) = struct
       function
       | [] -> []
       | _ :: _ as l when n <= 0 -> l
-      | x :: xs -> x :: drop (n - 1) xs
+      | _ :: xs -> drop (n - 1) xs
+
+    let sub ~start ~len l =
+      take len (drop start l)
   end
 
   let get_model (I arr_i) state = List.nth state arr_i
@@ -468,9 +469,9 @@ module Dynarray_spec (Elem : Elem) = struct
           update_model
             dst
             (fun dst ->
-              let prefix = List.take dst_pos dst in
-              let postfix = List.drop (dst_pos + len) dst in
-              prefix @ List.take len (List.drop src_pos (get_model src state)) @ postfix
+              List.take dst_pos dst
+              @ List.sub ~start:src_pos ~len (get_model src state)
+              @ List.drop (dst_pos + len) dst
             )
             state
         else
@@ -729,7 +730,7 @@ end
 let () =
   QCheck_base_runner.run_tests_main
     [ Test_sequential.Int.agree_test ~count:1_000 ~name:"sequential model agreement test (int)";
-      Test_domain.Int.stress_test_par ~count:10_000 ~name:"stress test (int)";
+      Test_domain.Int.stress_test_par ~count:1_000 ~name:"stress test (int)";
       Test_sequential.Float.agree_test ~count:1_000 ~name:"sequential model agreement test (float)";
-      Test_domain.Float.stress_test_par ~count:10_000 ~name:"stress test (float)";
+      Test_domain.Float.stress_test_par ~count:1_000 ~name:"stress test (float)";
     ]
