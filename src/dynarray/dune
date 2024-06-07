@@ -6,4 +6,5 @@
 (executable
  (name stm)
  (modules stm)
+ (flags (:standard -warn-error -A))
  (libraries qcheck-stm.sequential qcheck-stm.domain))

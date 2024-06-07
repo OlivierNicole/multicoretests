@@ -82,6 +82,7 @@ module Dynarray_spec (Elem : Elem) = struct
     | Fit_capacity of idx
     | Set_capacity of idx * int
     | Reset of idx
+    | Blit of { src : idx; src_pos : int; dst : idx; dst_pos : int; len : int }
 
   let show_cmd : cmd -> string =
     let open Format in
@@ -165,6 +166,14 @@ module Dynarray_spec (Elem : Elem) = struct
     | Fit_capacity (I arr_idx) -> sprintf "fit_capacity a%d" arr_idx
     | Set_capacity (I arr_idx, n) -> sprintf "set_capacity (a%d, %d)" arr_idx n
     | Reset (I arr_idx) -> sprintf "reset a%d" arr_idx
+    | Blit { src = I src; src_pos; dst = I dst; dst_pos; len } ->
+        sprintf
+          "blit@ {src = a%d;@ src_pos = %d;@ dst = a%d;@ dst_pos = %d;@ len = %d@,}"
+          src
+          src_pos
+          dst
+          dst_pos
+          len
 
   type state = elem list list
 
@@ -242,6 +251,15 @@ module Dynarray_spec (Elem : Elem) = struct
                 <$> arr_idx state
                 <*> nat;
           33, (fun arr_i -> Reset arr_i) <$> arr_idx state;
+          (*
+          33, (fun src src_pos dst dst_pos len ->
+                Blit {src; src_pos; dst; dst_pos; len})
+               <$> arr_idx state
+               <*> mid_int
+               <*> arr_idx state
+               <*> mid_int
+               <*> mid_int;
+               *)
         ])
 
   let run : cmd -> sut -> res =
@@ -345,6 +363,10 @@ module Dynarray_spec (Elem : Elem) = struct
     | Fit_capacity arr_i -> Res (unit, Dynarray.fit_capacity (nth sut arr_i))
     | Set_capacity (arr_i, cap) -> Res (unit, Dynarray.set_capacity (nth sut arr_i) cap)
     | Reset arr_i -> Res (unit, Dynarray.reset (nth sut arr_i))
+    | Blit { src; src_pos; dst; dst_pos; len } ->
+        Res (result unit exn,
+          try Ok (Dynarray.blit (nth sut src) src_pos (nth sut dst) dst_pos len)
+          with Invalid_argument _ as e -> Error e)
 
   let init_state = Elem.init_state
 
@@ -356,6 +378,12 @@ module Dynarray_spec (Elem : Elem) = struct
       | [] -> []
       | _ :: _ when n <= 0 -> []
       | x :: xs -> x :: take (n - 1) xs
+
+    let[@tail_mod_cons] rec drop n =
+      function
+      | [] -> []
+      | _ :: _ as l when n <= 0 -> l
+      | x :: xs -> x :: drop (n - 1) xs
   end
 
   let get_model (I arr_i) state = List.nth state arr_i
@@ -432,6 +460,21 @@ module Dynarray_spec (Elem : Elem) = struct
     | Fit_capacity _ -> state
     | Set_capacity (arr_i, cap) -> update_model arr_i (fun arr -> List.take cap arr) state
     | Reset arr_i -> update_model arr_i (Fun.const []) state
+    | Blit { src; src_pos; dst; dst_pos; len } ->
+        if 0 <= src_pos
+           && src_pos + len <= List.length (get_model src state)
+           && 0 <= dst_pos
+           && dst_pos <= List.length (get_model dst state) then
+          update_model
+            dst
+            (fun dst ->
+              let prefix = List.take dst_pos dst in
+              let postfix = List.drop (dst_pos + len) dst in
+              prefix @ List.take len (List.drop src_pos (get_model src state)) @ postfix
+            )
+            state
+        else
+          state
 
   let precond _cmd _state = true
 
@@ -547,6 +590,22 @@ module Dynarray_spec (Elem : Elem) = struct
         (* The model here does not contain an actual notion of capacity, so
            only check that the result is greater than the actual length. *)
         valid_arr_idx i state && cap >= List.length (get_model i state)
+    | Blit { src; src_pos; dst; dst_pos; len }, Res ((Result (Unit, Exn), _), res) ->
+        valid_arr_idx src state
+        && valid_arr_idx dst state
+        && (match res with
+            | Error (Invalid_argument _) ->
+                not (
+                  0 <= src_pos
+                  && src_pos + len <= List.length (get_model src state)
+                  && 0 <= dst_pos
+                  && dst_pos <= List.length (get_model dst state))
+            | Ok () ->
+                0 <= src_pos
+                && src_pos + len <= List.length (get_model src state)
+                && 0 <= dst_pos
+                && dst_pos <= List.length (get_model dst state)
+            | Error _ -> false)
     | _ -> assert false
 end
 
@@ -601,6 +660,7 @@ module Dynarray_spec_for_stress_test (Elem : Elem) = struct
     | Ensure_extra_capacity _
     | Fit_capacity _
     | Set_capacity _
+    | Blit _
     | Reset _ -> state
 
   let precond _cmd _state = true
@@ -669,7 +729,7 @@ end
 let () =
   QCheck_base_runner.run_tests_main
     [ Test_sequential.Int.agree_test ~count:1_000 ~name:"sequential model agreement test (int)";
-      Test_domain.Int.stress_test_par ~count:1_000 ~name:"stress test (int)";
+      Test_domain.Int.stress_test_par ~count:10_000 ~name:"stress test (int)";
       Test_sequential.Float.agree_test ~count:1_000 ~name:"sequential model agreement test (float)";
-      Test_domain.Float.stress_test_par ~count:1_000 ~name:"stress test (float)";
+      Test_domain.Float.stress_test_par ~count:10_000 ~name:"stress test (float)";
     ]
